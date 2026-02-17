@@ -30,3 +30,4 @@ export const CHART_COLORS = ['#ffd700', '#4caf50', '#ff6b6b', '#64b5f6', '#ba68c
 
 export const STORAGE_KEY = 'sam_games'
 export const SOUND_KEY = 'sam_sound'
+export const MUSIC_KEY = 'sam_music'

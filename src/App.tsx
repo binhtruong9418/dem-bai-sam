@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { GameSession, View } from './types'
-import { SOUND_KEY } from './types'
+import { SOUND_KEY, MUSIC_KEY } from './types'
 import {
   loadGames, saveGames, loadSoundEnabled,
   formatMoney, getSorted, getRandomAvatar, decodeGame, encodeGame,
 } from './utils'
-import { playScoreSound, playAddPlayerSound, playEndGameSound, playUndoSound } from './sounds'
+import { playScoreSound, playAddPlayerSound, playEndGameSound, playUndoSound, startBgMusic, stopBgMusic } from './sounds'
 import Confetti from './components/Confetti'
 import GameCard from './components/GameCard'
 import ScoreEntry from './components/ScoreEntry'
@@ -20,6 +20,7 @@ function App() {
   const [activeGameId, setActiveGameId] = useState<string | null>(null)
   const [reviewGameId, setReviewGameId] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(loadSoundEnabled)
+  const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem(MUSIC_KEY) === 'true')
 
   // UI state
   const [showNewGameDialog, setShowNewGameDialog] = useState(false)
@@ -45,6 +46,11 @@ function App() {
   // Persist
   useEffect(() => saveGames(games), [games])
   useEffect(() => localStorage.setItem(SOUND_KEY, soundEnabled.toString()), [soundEnabled])
+  useEffect(() => {
+    localStorage.setItem(MUSIC_KEY, musicEnabled.toString())
+    if (musicEnabled) startBgMusic()
+    else stopBgMusic()
+  }, [musicEnabled])
 
   // Check URL for shared game on mount
   useEffect(() => {
@@ -217,6 +223,13 @@ function App() {
       <div className="header">
         <h1>🧧 Đếm Bài Sâm</h1>
         <div className="header-actions">
+          <button
+            className={`sound-toggle ${musicEnabled ? 'on' : ''}`}
+            onClick={() => setMusicEnabled(!musicEnabled)}
+            title={musicEnabled ? 'Tắt nhạc nền' : 'Bật nhạc nền'}
+          >
+            {musicEnabled ? '🎵' : '🎵'}
+          </button>
           <button
             className={`sound-toggle ${soundEnabled ? 'on' : ''}`}
             onClick={() => setSoundEnabled(!soundEnabled)}

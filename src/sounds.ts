@@ -6,6 +6,68 @@ function getCtx(): AudioContext {
   return audioCtx
 }
 
+// --- Background music (pentatonic Tết melody) ---
+let bgGain: GainNode | null = null
+let bgPlaying = false
+let bgTimeout: ReturnType<typeof setTimeout> | null = null
+
+// Pentatonic scale notes for a cheerful Tết feel
+const BG_MELODY = [
+  // phrase 1
+  523, 587, 659, 784, 659, 587, 523, 0,
+  // phrase 2
+  784, 659, 587, 523, 587, 659, 784, 0,
+  // phrase 3
+  523, 659, 784, 880, 784, 659, 523, 0,
+  // phrase 4
+  880, 784, 659, 523, 587, 523, 440, 0,
+]
+const BG_NOTE_DURATION = 0.28
+const BG_VOLUME = 0.04
+
+function playBgLoop() {
+  if (!bgPlaying) return
+  try {
+    const ctx = getCtx()
+    if (!bgGain) {
+      bgGain = ctx.createGain()
+      bgGain.gain.setValueAtTime(BG_VOLUME, ctx.currentTime)
+      bgGain.connect(ctx.destination)
+    }
+
+    BG_MELODY.forEach((freq, i) => {
+      if (freq === 0) return // rest
+      const osc = ctx.createOscillator()
+      const noteGain = ctx.createGain()
+      osc.connect(noteGain)
+      noteGain.connect(bgGain!)
+      osc.type = 'sine'
+      const startTime = ctx.currentTime + i * BG_NOTE_DURATION
+      osc.frequency.setValueAtTime(freq, startTime)
+      noteGain.gain.setValueAtTime(1, startTime)
+      noteGain.gain.exponentialRampToValueAtTime(0.01, startTime + BG_NOTE_DURATION * 0.9)
+      osc.start(startTime)
+      osc.stop(startTime + BG_NOTE_DURATION)
+    })
+
+    // Schedule next loop
+    const loopDuration = BG_MELODY.length * BG_NOTE_DURATION * 1000
+    bgTimeout = setTimeout(() => playBgLoop(), loopDuration)
+  } catch { /* ignore */ }
+}
+
+export function startBgMusic() {
+  if (bgPlaying) return
+  bgPlaying = true
+  playBgLoop()
+}
+
+export function stopBgMusic() {
+  bgPlaying = false
+  if (bgTimeout) { clearTimeout(bgTimeout); bgTimeout = null }
+  bgGain = null
+}
+
 export function playScoreSound() {
   try {
     const ctx = getCtx()
