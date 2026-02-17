@@ -1,7 +1,7 @@
 import type { RefObject } from 'react'
 import type { GameSession } from '../types'
 import { AVATARS } from '../types'
-import { formatMoney, getSorted, encodeGame } from '../utils'
+import { encodeGame } from '../utils'
 import { QRCodeSVG } from 'qrcode.react'
 
 interface DialogProps {
