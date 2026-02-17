@@ -4,6 +4,7 @@ export interface Player {
   avatar: string
   history: number[]
   total: number
+  scoreStep?: 1 | 5 | 10
 }
 
 export interface GameSession {
@@ -19,7 +20,6 @@ export interface SharedGame {
   p: { n: string; a: string; h: number[]; t: number }[]
 }
 
-export type View = 'home' | 'game' | 'review'
 
 export const AVATARS = [
   '🐉', '🐅', '🐇', '🐍', '🐴', '🐏', '🐵', '🐓', '🐕', '🐖', '🐀', '🐂',

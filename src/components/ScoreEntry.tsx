@@ -5,10 +5,11 @@ interface Props {
   scoreInputs: Record<string, string>
   onScoreChange: (playerId: string, value: string) => void
   onAdjust: (playerId: string, delta: number) => void
+  onSetStep: (playerId: string, step: 1 | 5 | 10) => void
   onSubmit: () => void
 }
 
-export default function ScoreEntry({ players, scoreInputs, onScoreChange, onAdjust, onSubmit }: Props) {
+export default function ScoreEntry({ players, scoreInputs, onScoreChange, onAdjust, onSetStep, onSubmit }: Props) {
   return (
     <div className="section">
       <div className="section-title">🎴 Nhập điểm</div>
@@ -16,12 +17,29 @@ export default function ScoreEntry({ players, scoreInputs, onScoreChange, onAdju
         {players.map((p) => {
           const val = scoreInputs[p.id] || ''
           const numVal = parseInt(val, 10) || 0
+          const step = p.scoreStep ?? 1
           return (
             <div key={p.id} className="score-row">
-              <span className="score-row-avatar">{p.avatar}</span>
-              <div className="score-row-name">{p.name}</div>
+              <div className="score-row-left">
+                <span className="score-row-avatar">{p.avatar}</span>
+                <div>
+                  <div className="score-row-name">{p.name}</div>
+                  <div className="step-selector">
+                    {([1, 5, 10] as const).map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={`step-btn ${step === s ? 'active' : ''}`}
+                        onClick={() => onSetStep(p.id, s)}
+                      >
+                        ±{s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <div className="score-input-wrapper">
-                <button className="score-quick-btn minus" onClick={() => onAdjust(p.id, -10)} type="button">−</button>
+                <button className="score-quick-btn minus" onClick={() => onAdjust(p.id, -step)} type="button">−</button>
                 <input
                   className={`score-input ${numVal > 0 ? 'has-positive' : numVal < 0 ? 'has-negative' : ''}`}
                   type="text"
@@ -30,7 +48,7 @@ export default function ScoreEntry({ players, scoreInputs, onScoreChange, onAdju
                   value={val}
                   onChange={(e) => onScoreChange(p.id, e.target.value)}
                 />
-                <button className="score-quick-btn plus" onClick={() => onAdjust(p.id, 10)} type="button">+</button>
+                <button className="score-quick-btn plus" onClick={() => onAdjust(p.id, step)} type="button">+</button>
               </div>
             </div>
           )

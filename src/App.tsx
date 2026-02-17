@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { GameSession, View } from './types'
+import { Routes, Route, useNavigate, useLocation, matchPath, Navigate } from 'react-router-dom'
+import type { GameSession } from './types'
 import { SOUND_KEY, MUSIC_KEY } from './types'
 import {
   loadGames, saveGames, loadSoundEnabled,
@@ -15,10 +16,17 @@ import { NewGameDialog, ConfirmDialog, AvatarPicker, ShareDialog } from './compo
 import './App.css'
 
 function App() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  // Derive active/review game IDs from URL
+  const gameMatch = matchPath('/game/:id', location.pathname)
+  const reviewMatch = matchPath('/review/:id', location.pathname)
+  const activeGameId = gameMatch?.params.id ?? null
+  const reviewGameId = reviewMatch?.params.id ?? null
+  const isHome = location.pathname === '/'
+
   const [games, setGames] = useState<GameSession[]>(loadGames)
-  const [view, setView] = useState<View>('home')
-  const [activeGameId, setActiveGameId] = useState<string | null>(null)
-  const [reviewGameId, setReviewGameId] = useState<string | null>(null)
   const [soundEnabled, setSoundEnabled] = useState(loadSoundEnabled)
   const [musicEnabled, setMusicEnabled] = useState(() => localStorage.getItem(MUSIC_KEY) === 'true')
 
@@ -60,12 +68,10 @@ function App() {
       const game = decodeGame(shared)
       if (game) {
         setGames((prev) => [game, ...prev])
-        setReviewGameId(game.id)
-        setView('review')
-        window.history.replaceState({}, '', window.location.pathname)
+        navigate('/review/' + game.id, { replace: true })
       }
     }
-  }, [])
+  }, [navigate])
 
   const activeGame = games.find((g) => g.id === activeGameId) ?? null
   const reviewGame = games.find((g) => g.id === reviewGameId) ?? null
@@ -80,37 +86,41 @@ function App() {
     const name = newGameName.trim() || `Ván ${games.length + 1}`
     const game: GameSession = { id: Date.now().toString(), name, createdAt: Date.now(), players: [] }
     setGames((prev) => [game, ...prev])
-    setActiveGameId(game.id)
-    setView('game')
     setNewGameName('')
     setShowNewGameDialog(false)
     setScoreInputs({})
-  }, [newGameName, games.length])
+    navigate('/game/' + game.id)
+  }, [newGameName, games.length, navigate])
 
   const endGame = () => {
+    if (!activeGameId) return
     setGames((prev) => prev.map((g) => g.id === activeGameId ? { ...g, endedAt: Date.now() } : g))
     playSound(playEndGameSound)
     setShowConfetti(true)
     setTimeout(() => setShowConfetti(false), 3000)
     setShowEndGameDialog(false)
-    setReviewGameId(activeGameId)
-    setView('review')
-    setActiveGameId(null)
     setScoreInputs({})
+    navigate('/review/' + activeGameId)
   }
 
   const deleteGame = (gameId: string) => {
     setGames((prev) => prev.filter((g) => g.id !== gameId))
-    if (activeGameId === gameId) { setActiveGameId(null); setView('home') }
-    if (reviewGameId === gameId) { setReviewGameId(null); setView('home') }
+    if (activeGameId === gameId || reviewGameId === gameId) navigate('/')
     setShowDeleteGameDialog(null)
+  }
+
+  const continueGame = () => {
+    if (!reviewGameId) return
+    setGames((prev) => prev.map((g) => g.id === reviewGameId ? { ...g, endedAt: undefined } : g))
+    setScoreInputs({})
+    navigate('/game/' + reviewGameId)
   }
 
   const openGame = (gameId: string) => {
     const game = games.find((g) => g.id === gameId)
     if (!game) return
-    if (game.endedAt) { setReviewGameId(gameId); setView('review') }
-    else { setActiveGameId(gameId); setView('game'); setScoreInputs({}) }
+    if (game.endedAt) navigate('/review/' + gameId)
+    else { setScoreInputs({}); navigate('/game/' + gameId) }
   }
 
   // --- Player management ---
@@ -121,7 +131,7 @@ function App() {
       if (g.id !== activeGameId) return g
       if (g.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return g
       const usedAvatars = g.players.map((p) => p.avatar)
-      return { ...g, players: [...g.players, { id: Date.now().toString(), name, avatar: getRandomAvatar(usedAvatars), history: [], total: 0 }] }
+      return { ...g, players: [...g.players, { id: Date.now().toString(), name, avatar: getRandomAvatar(usedAvatars), history: [], total: 0, scoreStep: 1 }] }
     }))
     playSound(playAddPlayerSound)
     setNewPlayerName('')
@@ -134,6 +144,14 @@ function App() {
       return { ...g, players: g.players.filter((p) => p.id !== playerId) }
     }))
     setScoreInputs((prev) => { const next = { ...prev }; delete next[playerId]; return next })
+  }
+
+  const setPlayerStep = (playerId: string, step: 1 | 5 | 10) => {
+    if (!activeGameId) return
+    setGames((prev) => prev.map((g) => {
+      if (g.id !== activeGameId) return g
+      return { ...g, players: g.players.map((p) => p.id === playerId ? { ...p, scoreStep: step } : p) }
+    }))
   }
 
   const changeAvatar = (playerId: string, avatar: string) => {
@@ -195,7 +213,10 @@ function App() {
     if (!currentShareGame) return
     const sorted = getSorted(currentShareGame.players)
     const text = `🧧 ${currentShareGame.name}\n` +
-      sorted.map((p, i) => `${i === 0 ? '👑' : `#${i + 1}`} ${p.avatar} ${p.name}: ${formatMoney(p.total)}`).join('\n')
+      sorted.map((p) => {
+        const expr = p.history.map((v, i) => i === 0 ? `${v}` : v >= 0 ? `+${v}` : `${v}`).join('')
+        return `${p.avatar} ${p.name}: ${expr} = ${formatMoney(p.total)}`
+      }).join('\n')
     await navigator.clipboard.writeText(text)
     setCopySuccess(true)
     setTimeout(() => setCopySuccess(false), 2000)
@@ -204,14 +225,15 @@ function App() {
   const copyShareLink = () => {
     if (!currentShareGame) return
     const encoded = encodeGame(currentShareGame)
-    const url = `${window.location.origin}${window.location.pathname}?game=${encoded}`
+    const url = `${window.location.origin}/?game=${encoded}`
     navigator.clipboard.writeText(url)
     setCopySuccess(true)
     setTimeout(() => setCopySuccess(false), 2000)
   }
 
   const goHome = () => {
-    setView('home'); setActiveGameId(null); setReviewGameId(null); setShowStatsSection(false)
+    navigate('/')
+    setShowStatsSection(false)
   }
 
   // --- Render ---
@@ -238,105 +260,111 @@ function App() {
             {soundEnabled ? '🔊' : '🔇'}
           </button>
         </div>
-        {view !== 'home' && <button className="back-btn" onClick={goHome}>← Trang chủ</button>}
+        {!isHome && <button className="back-btn" onClick={goHome}>← Trang chủ</button>}
       </div>
 
-      {/* ===== HOME ===== */}
-      {view === 'home' && (
-        <>
-          <button
-            className="btn btn-gold btn-block"
-            onClick={() => { setShowNewGameDialog(true); setTimeout(() => gameNameInputRef.current?.focus(), 100) }}
-          >
-            + Tạo cuộc chơi mới
-          </button>
-          {games.length === 0 ? (
-            <div className="empty-state">Chưa có cuộc chơi nào.<br />Bấm nút trên để bắt đầu!</div>
-          ) : (
-            <div className="game-list">
-              {games.map((g) => (
-                <GameCard key={g.id} game={g} onOpen={openGame} onDelete={(id) => setShowDeleteGameDialog(id)} />
-              ))}
+      <Routes>
+        {/* ===== HOME ===== */}
+        <Route path="/" element={
+          <>
+            <button
+              className="btn btn-gold btn-block"
+              onClick={() => { setShowNewGameDialog(true); setTimeout(() => gameNameInputRef.current?.focus(), 100) }}
+            >
+              + Tạo cuộc chơi mới
+            </button>
+            {games.length === 0 ? (
+              <div className="empty-state">Chưa có cuộc chơi nào.<br />Bấm nút trên để bắt đầu!</div>
+            ) : (
+              <div className="game-list">
+                {games.map((g) => (
+                  <GameCard key={g.id} game={g} onOpen={openGame} onDelete={(id) => setShowDeleteGameDialog(id)} />
+                ))}
+              </div>
+            )}
+          </>
+        } />
+
+        {/* ===== ACTIVE GAME ===== */}
+        <Route path="/game/:id" element={activeGame ? (
+          <>
+            <div className="game-title-bar">
+              <h2>{activeGame.name}</h2>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {activeGame.players.some((p) => p.history.length > 0) && (
+                  <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--gold-primary)' }} onClick={() => setShowShareDialog(true)}>📤</button>
+                )}
+                <button className="btn btn-danger btn-sm" onClick={() => setShowEndGameDialog(true)}>Kết thúc</button>
+              </div>
             </div>
-          )}
-        </>
-      )}
 
-      {/* ===== ACTIVE GAME ===== */}
-      {view === 'game' && activeGame && (
-        <>
-          <div className="game-title-bar">
-            <h2>{activeGame.name}</h2>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {activeGame.players.some((p) => p.history.length > 0) && (
-                <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--gold-primary)' }} onClick={() => setShowShareDialog(true)}>📤</button>
-              )}
-              <button className="btn btn-danger btn-sm" onClick={() => setShowEndGameDialog(true)}>Kết thúc</button>
-            </div>
-          </div>
-
-          <div className="section">
-            <div className="section-title">👥 Người chơi</div>
-            <form className="add-player-form" onSubmit={(e) => { e.preventDefault(); addPlayer() }}>
-              <input ref={playerInputRef} type="text" placeholder="Tên người chơi..." value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} maxLength={20} />
-              <button type="submit" className="btn btn-gold">Thêm</button>
-            </form>
-          </div>
-
-          {activeGame.players.length > 0 && (
-            <ScoreEntry players={activeGame.players} scoreInputs={scoreInputs} onScoreChange={handleScoreChange} onAdjust={adjustScore} onSubmit={submitScores} />
-          )}
-
-          {activeGame.players.length > 0 && (
             <div className="section">
-              <div className="section-title">📊 Tổng kết</div>
-              <PlayerSummary players={activeGame.players} isActive scoreAnimations={scoreAnimations} onAvatarClick={(id) => setShowAvatarPicker(id)} onUndo={(id) => setShowUndoDialog(id)} onRemove={(id) => setShowRemovePlayerDialog(id)} />
+              <div className="section-title">👥 Người chơi</div>
+              <form className="add-player-form" onSubmit={(e) => { e.preventDefault(); addPlayer() }}>
+                <input ref={playerInputRef} type="text" placeholder="Tên người chơi..." value={newPlayerName} onChange={(e) => setNewPlayerName(e.target.value)} maxLength={20} />
+                <button type="submit" className="btn btn-gold">Thêm</button>
+              </form>
             </div>
-          )}
 
-          {activeGame.players.some((p) => p.history.length > 1) && (
-            <StatsSection players={activeGame.players} expanded={showStatsSection} onToggle={() => setShowStatsSection(!showStatsSection)} />
-          )}
-        </>
-      )}
+            {activeGame.players.length > 0 && (
+              <ScoreEntry players={activeGame.players} scoreInputs={scoreInputs} onScoreChange={handleScoreChange} onAdjust={adjustScore} onSetStep={setPlayerStep} onSubmit={submitScores} />
+            )}
 
-      {/* ===== REVIEW GAME ===== */}
-      {view === 'review' && reviewGame && (
-        <>
-          <div className="game-title-bar">
-            <h2>{reviewGame.name}</h2>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--gold-primary)' }} onClick={() => setShowShareDialog(true)}>📤 Chia sẻ</button>
-              <span className="game-card-badge ended">Đã kết thúc</span>
+            {activeGame.players.length > 0 && (
+              <div className="section">
+                <div className="section-title">📊 Tổng kết</div>
+                <PlayerSummary players={activeGame.players} isActive scoreAnimations={scoreAnimations} onAvatarClick={(id) => setShowAvatarPicker(id)} onUndo={(id) => setShowUndoDialog(id)} onRemove={(id) => setShowRemovePlayerDialog(id)} />
+              </div>
+            )}
+
+            {activeGame.players.some((p) => p.history.length > 1) && (
+              <StatsSection players={activeGame.players} expanded={showStatsSection} onToggle={() => setShowStatsSection(!showStatsSection)} />
+            )}
+          </>
+        ) : <Navigate to="/" replace />} />
+
+        {/* ===== REVIEW GAME ===== */}
+        <Route path="/review/:id" element={reviewGame ? (
+          <>
+            <div className="game-title-bar">
+              <h2>{reviewGame.name}</h2>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--gold-primary)' }} onClick={() => setShowShareDialog(true)}>📤 Chia sẻ</button>
+                <button className="btn btn-gold btn-sm" onClick={continueGame}>▶ Tiếp tục</button>
+                <span className="game-card-badge ended">Đã kết thúc</span>
+              </div>
             </div>
-          </div>
 
-          <div className="section">
-            <div className="section-title">🏆 Bảng xếp hạng</div>
-            <div className="scoreboard">
-              {getSorted(reviewGame.players).map((p, i) => (
-                <div key={p.id} className="scoreboard-row">
-                  <div className={`scoreboard-rank ${i === 0 ? 'rank-1' : ''}`}>{i + 1}</div>
-                  <span className="scoreboard-avatar">{p.avatar}</span>
-                  <div className="scoreboard-name">{p.name}</div>
-                  <div className={`scoreboard-total ${p.total > 0 ? 'positive' : p.total < 0 ? 'negative' : 'zero'}`}>
-                    {formatMoney(p.total)}
+            <div className="section">
+              <div className="section-title">🏆 Bảng xếp hạng</div>
+              <div className="scoreboard">
+                {getSorted(reviewGame.players).map((p, i) => (
+                  <div key={p.id} className="scoreboard-row">
+                    <div className={`scoreboard-rank ${i === 0 ? 'rank-1' : ''}`}>{i + 1}</div>
+                    <span className="scoreboard-avatar">{p.avatar}</span>
+                    <div className="scoreboard-name">{p.name}</div>
+                    <div className={`scoreboard-total ${p.total > 0 ? 'positive' : p.total < 0 ? 'negative' : 'zero'}`}>
+                      {formatMoney(p.total)}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="section">
-            <div className="section-title">📋 Chi tiết</div>
-            <PlayerSummary players={reviewGame.players} isActive={false} scoreAnimations={{}} />
-          </div>
+            <div className="section">
+              <div className="section-title">📋 Chi tiết</div>
+              <PlayerSummary players={reviewGame.players} isActive={false} scoreAnimations={{}} />
+            </div>
 
-          {reviewGame.players.some((p) => p.history.length > 1) && (
-            <StatsSection players={reviewGame.players} expanded={showStatsSection} onToggle={() => setShowStatsSection(!showStatsSection)} />
-          )}
-        </>
-      )}
+            {reviewGame.players.some((p) => p.history.length > 1) && (
+              <StatsSection players={reviewGame.players} expanded={showStatsSection} onToggle={() => setShowStatsSection(!showStatsSection)} />
+            )}
+          </>
+        ) : <Navigate to="/" replace />} />
+
+        {/* Catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
 
       {/* ===== DIALOGS ===== */}
       {showNewGameDialog && (

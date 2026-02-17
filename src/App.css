@@ -192,6 +192,7 @@
   border-radius: 6px;
   font-weight: 600;
   flex-shrink: 0;
+  margin-right: 28px;
 }
 
 .game-card-badge.active {
@@ -275,19 +276,48 @@
   gap: 8px;
 }
 
+.score-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
 .score-row-avatar {
   font-size: 20px;
   flex-shrink: 0;
 }
 
 .score-row-name {
-  flex: 1;
   font-size: 14px;
   font-weight: 500;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.step-selector {
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+}
+
+.step-btn {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 215, 0, 0.15);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.step-btn.active {
+  border-color: var(--gold-primary);
+  color: var(--gold-primary);
+  background: rgba(255, 215, 0, 0.1);
 }
 
 .score-input-wrapper {
